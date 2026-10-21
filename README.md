@@ -1,6 +1,6 @@
 # New to All (Outlook add-in)
 
-When you are **reading** an email, this add-in adds a **New to All** button on the message ribbon. Clicking it opens a **new compose** window (not a reply or forward) with:
+When you are **reading** an email, this add-in adds a **New to All** command on the message toolbar. In Outlook on the web and new Outlook for Windows it usually appears under the message **Apps** menu or **⋯** overflow while a message is selected (reading pane or opened item). Clicking it opens a **new compose** window (not a reply or forward) with:
 
 - **To:** the original sender plus everyone on the original **To** line  
 - **Cc:** everyone on the original **Cc** line  

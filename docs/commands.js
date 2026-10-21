@@ -24,49 +24,97 @@
     list.push(trimmed);
   }
 
-  function newToAll(event) {
-    const mailbox = Office.context.mailbox;
-    const item = mailbox.item;
-    const selfLower = normalizeEmail(mailbox.userProfile.emailAddress);
-
-    if (!item || !item.from || !item.from.emailAddress) {
+  function completeEvent(event) {
+    try {
       event.completed();
+    } catch (e) {
+      // Office may throw if completed was already called.
+    }
+  }
+
+  /**
+   * MessageRead: item.to / item.cc are EmailAddressDetails[] (see MessageRead docs).
+   * MessageCompose: they are Recipients objects with getAsync.
+   */
+  function getToAndCcLists(item, callback) {
+    if (Array.isArray(item.to)) {
+      callback(item.to, Array.isArray(item.cc) ? item.cc : []);
       return;
     }
 
-    item.to.getAsync(function (toResult) {
-      if (toResult.status !== Office.AsyncResultStatus.Succeeded) {
-        event.completed();
+    if (item.to && typeof item.to.getAsync === "function") {
+      item.to.getAsync(function (toResult) {
+        if (toResult.status !== Office.AsyncResultStatus.Succeeded) {
+          callback([], []);
+          return;
+        }
+        const toList = toResult.value || [];
+        if (item.cc && typeof item.cc.getAsync === "function") {
+          item.cc.getAsync(function (ccResult) {
+            const ccList =
+              ccResult.status === Office.AsyncResultStatus.Succeeded
+                ? ccResult.value || []
+                : [];
+            callback(toList, ccList);
+          });
+        } else {
+          callback(toList, Array.isArray(item.cc) ? item.cc : []);
+        }
+      });
+      return;
+    }
+
+    callback([], Array.isArray(item.cc) ? item.cc : []);
+  }
+
+  function openNewToAll(mailbox, item, toList, ccList) {
+    const selfLower = normalizeEmail(mailbox.userProfile.emailAddress);
+
+    if (!item.from || !item.from.emailAddress) {
+      return;
+    }
+
+    const seen = new Set();
+    const toRecipients = [];
+
+    addUniqueRecipient(toRecipients, seen, item.from.emailAddress, selfLower);
+
+    (toList || []).forEach(function (recipient) {
+      addUniqueRecipient(toRecipients, seen, recipient.emailAddress, selfLower);
+    });
+
+    const ccRecipients = [];
+    (ccList || []).forEach(function (recipient) {
+      addUniqueRecipient(ccRecipients, seen, recipient.emailAddress, selfLower);
+    });
+
+    mailbox.displayNewMessageForm({
+      toRecipients: toRecipients,
+      ccRecipients: ccRecipients,
+    });
+  }
+
+  function newToAll(event) {
+    try {
+      const mailbox = Office.context.mailbox;
+      const item = mailbox.item;
+
+      if (!item) {
+        completeEvent(event);
         return;
       }
 
-      item.cc.getAsync(function (ccResult) {
-        if (ccResult.status !== Office.AsyncResultStatus.Succeeded) {
-          event.completed();
-          return;
+      getToAndCcLists(item, function (toList, ccList) {
+        try {
+          openNewToAll(mailbox, item, toList, ccList);
+        } catch (err) {
+          // Swallow errors so the ribbon command still completes.
+        } finally {
+          completeEvent(event);
         }
-
-        const seen = new Set();
-        const toRecipients = [];
-
-        addUniqueRecipient(toRecipients, seen, item.from.emailAddress, selfLower);
-
-        (toResult.value || []).forEach(function (recipient) {
-          addUniqueRecipient(toRecipients, seen, recipient.emailAddress, selfLower);
-        });
-
-        const ccRecipients = [];
-        (ccResult.value || []).forEach(function (recipient) {
-          addUniqueRecipient(ccRecipients, seen, recipient.emailAddress, selfLower);
-        });
-
-        mailbox.displayNewMessageForm({
-          toRecipients: toRecipients,
-          ccRecipients: ccRecipients,
-        });
-
-        event.completed();
       });
-    });
+    } catch (err) {
+      completeEvent(event);
+    }
   }
 })();
